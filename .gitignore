@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Node (only used for local testing, not shipped)
+node_modules/
+package-lock.json
+
+# macOS
+.DS_Store

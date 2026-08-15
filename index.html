@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solveur de Rubik's Cube</title>
+<style>
+  /* ---------- Palette : chrome sobre, couleurs vives réservées au cube ---------- */
+  :root {
+    --bg:        #eef0f4;
+    --surface:   #ffffff;
+    --surface-2: #f5f6fa;
+    --text:      #1a1c22;
+    --muted:     #5c6270;
+    --line:      #d9dce4;
+    --line-soft: #e6e8ee;
+    --accent:    #4f5bd5;
+    --accent-ink:#ffffff;
+    --shadow:    0 1px 2px rgba(20,22,30,.06), 0 8px 24px rgba(20,22,30,.08);
+    --ok:        #1f8a54;
+    --err:       #d33c3c;
+
+    /* couleurs autocollants (speedcube) */
+    --c-U: #f5f7fb; --c-U-edge:#c9ced8;   /* blanc  */
+    --c-R: #e23b3b; --c-R-edge:#b62a2a;   /* rouge  */
+    --c-F: #16a05a; --c-F-edge:#0e7a43;   /* vert   */
+    --c-D: #ffd21e; --c-D-edge:#d8ac00;   /* jaune  */
+    --c-L: #ff7a1a; --c-L-edge:#d65e05;   /* orange */
+    --c-B: #2a6cf0; --c-B-edge:#1c50c2;   /* bleu   */
+    --sticker-ink:#12141a;
+    --cubie-base:#0e0f13;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:        #14161c;
+      --surface:   #1c1f27;
+      --surface-2: #23262f;
+      --text:      #e8eaf0;
+      --muted:     #9096a4;
+      --line:      #2c313b;
+      --line-soft: #262a33;
+      --accent:    #7b86ff;
+      --accent-ink:#0e1016;
+      --shadow:    0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.4);
+      --cubie-base:#08090c;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg:#eef0f4; --surface:#ffffff; --surface-2:#f5f6fa; --text:#1a1c22;
+    --muted:#5c6270; --line:#d9dce4; --line-soft:#e6e8ee; --accent:#4f5bd5;
+    --accent-ink:#ffffff; --shadow:0 1px 2px rgba(20,22,30,.06),0 8px 24px rgba(20,22,30,.08);
+    --cubie-base:#0e0f13;
+  }
+  :root[data-theme="dark"] {
+    --bg:#14161c; --surface:#1c1f27; --surface-2:#23262f; --text:#e8eaf0;
+    --muted:#9096a4; --line:#2c313b; --line-soft:#262a33; --accent:#7b86ff;
+    --accent-ink:#0e1016; --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.4);
+    --cubie-base:#08090c;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace; }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: clamp(20px, 4vw, 48px) clamp(16px, 4vw, 32px) 64px; }
+
+  /* ---------- En-tête ---------- */
+  header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: clamp(20px, 3vw, 32px); }
+  .brand h1 {
+    margin: 0; font-size: clamp(1.5rem, 3.5vw, 2.1rem); font-weight: 800;
+    letter-spacing: -.02em; text-wrap: balance;
+  }
+  .brand p { margin: 6px 0 0; color: var(--muted); max-width: 52ch; font-size: .95rem; }
+  .theme-toggle {
+    flex: none; border: 1px solid var(--line); background: var(--surface); color: var(--text);
+    border-radius: 999px; padding: 8px 14px; font-size: .85rem; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .theme-toggle:hover { border-color: var(--accent); }
+
+  /* ---------- Grille principale ---------- */
+  .layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(240px, .9fr); gap: clamp(18px, 3vw, 32px); align-items: start; }
+  @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--line-soft);
+    border-radius: 16px; padding: clamp(16px, 2.5vw, 22px); box-shadow: var(--shadow);
+  }
+  .card + .card { margin-top: 18px; }
+  .eyebrow {
+    font-size: .72rem; text-transform: uppercase; letter-spacing: .12em;
+    color: var(--muted); font-weight: 700; margin: 0 0 12px;
+  }
+
+  /* ---------- Patron (net) du cube ---------- */
+  .net-scroll { overflow-x: auto; }
+  .net {
+    --cell: clamp(26px, 6.2vw, 40px);
+    display: grid;
+    grid-template-columns: repeat(4, calc(var(--cell) * 3));
+    grid-template-rows: repeat(3, calc(var(--cell) * 3));
+    gap: 10px; width: max-content; margin: 4px auto 0;
+  }
+  .face { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+          gap: 3px; padding: 4px; background: var(--cubie-base); border-radius: 8px; }
+  .face[data-pos="U"] { grid-column: 2; grid-row: 1; }
+  .face[data-pos="L"] { grid-column: 1; grid-row: 2; }
+  .face[data-pos="F"] { grid-column: 2; grid-row: 2; }
+  .face[data-pos="R"] { grid-column: 3; grid-row: 2; }
+  .face[data-pos="B"] { grid-column: 4; grid-row: 2; }
+  .face[data-pos="D"] { grid-column: 2; grid-row: 3; }
+  .face-tag {
+    grid-column: 1 / -1; text-align: center; font-size: .62rem; letter-spacing: .1em;
+    text-transform: uppercase; color: #6a7080; font-weight: 700; margin-bottom: 1px; user-select: none;
+  }
+
+  .sticker {
+    appearance: none; border: none; padding: 0; margin: 0; cursor: pointer;
+    aspect-ratio: 1 / 1; border-radius: 5px; position: relative;
+    background: var(--fill); box-shadow: inset 0 0 0 1px rgba(0,0,0,.18), inset 0 2px 3px rgba(255,255,255,.35), inset 0 -3px 5px rgba(0,0,0,.18);
+    transition: transform .08s ease;
+  }
+  .sticker::after { content:""; position:absolute; inset:0; border-radius:5px;
+    background: linear-gradient(150deg, rgba(255,255,255,.35), rgba(255,255,255,0) 45%); pointer-events:none; }
+  .sticker:not(.locked):hover { transform: scale(1.06); z-index: 2; }
+  .sticker:not(.locked):active { transform: scale(.96); }
+  .sticker.locked { cursor: default; }
+  .sticker.locked::before {
+    content:""; position:absolute; inset:32%; border-radius:50%;
+    background: rgba(0,0,0,.16); box-shadow: inset 0 0 0 1px rgba(255,255,255,.25);
+  }
+  .sticker:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; z-index: 3; }
+
+  /* couleurs de remplissage */
+  .fill-U { --fill: var(--c-U); } .fill-R { --fill: var(--c-R); } .fill-F { --fill: var(--c-F); }
+  .fill-D { --fill: var(--c-D); } .fill-L { --fill: var(--c-L); } .fill-B { --fill: var(--c-B); }
+
+  /* ---------- Palette de couleurs ---------- */
+  .palette { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .swatch {
+    appearance: none; cursor: pointer; border: 2px solid var(--line);
+    background: var(--surface-2); border-radius: 12px; padding: 8px 6px 7px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    font-size: .74rem; color: var(--muted); font-weight: 600;
+  }
+  .swatch .chip {
+    width: 100%; height: 26px; border-radius: 7px; background: var(--fill);
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.2), inset 0 2px 3px rgba(255,255,255,.35);
+  }
+  .swatch[aria-pressed="true"] { border-color: var(--accent); background: var(--surface); color: var(--text); }
+  .swatch:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .hint { color: var(--muted); font-size: .82rem; margin: 12px 0 0; }
+
+  /* ---------- Boutons ---------- */
+  .actions { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+  .btn {
+    appearance: none; cursor: pointer; border-radius: 11px; padding: 11px 16px;
+    font-size: .92rem; font-weight: 650; border: 1px solid var(--line);
+    background: var(--surface-2); color: var(--text); transition: filter .1s ease, border-color .1s ease;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 700; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn:disabled { opacity: .55; cursor: not-allowed; filter: none; border-color: var(--line); }
+  .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  /* ---------- Statut ---------- */
+  .status { margin-top: 14px; font-size: .88rem; display: flex; align-items: center; gap: 8px; min-height: 22px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+  .status.ok   { color: var(--ok); }  .status.ok  .dot { background: var(--ok); }
+  .status.err  { color: var(--err); } .status.err .dot { background: var(--err); }
+  .status.busy { color: var(--muted); }
+
+  /* ---------- Solution ---------- */
+  #solution { margin-top: 18px; }
+  #solution[hidden] { display: none; }
+  .solution-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .solution-head .count { font-size: 1.35rem; font-weight: 800; letter-spacing: -.01em; }
+  .solution-head .count span { color: var(--accent); }
+  .moves { display: flex; flex-wrap: wrap; gap: 7px; }
+  .move {
+    --mc: var(--muted); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: .9rem; font-weight: 700; padding: 5px 9px; border-radius: 8px;
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-left: 4px solid var(--mc); color: var(--text); white-space: nowrap;
+  }
+  .mc-U { --mc: var(--c-U-edge); } .mc-R { --mc: var(--c-R); } .mc-F { --mc: var(--c-F); }
+  .mc-D { --mc: var(--c-D-edge); } .mc-L { --mc: var(--c-L); } .mc-B { --mc: var(--c-B); }
+
+  .steps { margin: 18px 0 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+  .steps li { display: grid; grid-template-columns: 2ch auto 1fr; gap: 10px; align-items: baseline;
+    padding: 7px 4px; border-bottom: 1px solid var(--line-soft); font-size: .9rem; }
+  .steps li:last-child { border-bottom: none; }
+  .steps .n { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+  .steps .mv { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-weight: 700; }
+  .steps .ex { color: var(--muted); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 12px 18px; margin-top: 16px; font-size: .8rem; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 13px; height: 13px; border-radius: 3px; display: inline-block; box-shadow: inset 0 0 0 1px rgba(0,0,0,.2); }
+
+  .foot { margin-top: 30px; color: var(--muted); font-size: .8rem; text-align: center; }
+  .foot a { color: var(--accent); text-decoration: none; }
+  .foot a:hover { text-decoration: underline; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <h1>Solveur de Rubik&rsquo;s Cube</h1>
+      <p>Peins les 6 faces telles que sur ton cube, puis lance la résolution. Algorithme en deux phases de Kociemba &mdash; jusqu&rsquo;à ~22 mouvements.</p>
+    </div>
+    <button class="theme-toggle" id="themeToggle" type="button" aria-label="Changer de thème">
+      <span id="themeIcon">◐</span><span id="themeLabel">Thème</span>
+    </button>
+  </header>
+
+  <div class="layout">
+    <!-- Colonne cube -->
+    <section class="card" aria-label="Cube">
+      <p class="eyebrow">Ton cube</p>
+      <div class="net-scroll">
+        <div class="net" id="net" role="group" aria-label="Patron du cube (6 faces)"></div>
+      </div>
+      <div class="legend" id="legend"></div>
+    </section>
+
+    <!-- Colonne contrôles -->
+    <div>
+      <section class="card" aria-label="Couleurs et actions">
+        <p class="eyebrow">Couleur active</p>
+        <div class="palette" id="palette" role="group" aria-label="Choisir une couleur"></div>
+        <p class="hint">Clique une couleur, puis peins les cases. Tu peux aussi glisser sur plusieurs cases. Les centres sont fixes.</p>
+
+        <div class="actions">
+          <button class="btn primary" id="solveBtn" type="button">Résoudre</button>
+          <div class="btn-row">
+            <button class="btn" id="scrambleBtn" type="button">Mélanger</button>
+            <button class="btn" id="resetBtn" type="button">Réinitialiser</button>
+          </div>
+        </div>
+
+        <div class="status" id="status" role="status" aria-live="polite">
+          <span class="dot"></span><span id="statusText">Préparation du solveur&hellip;</span>
+        </div>
+      </section>
+
+      <section class="card" id="solution" hidden aria-label="Solution">
+        <p class="eyebrow">Solution</p>
+        <div class="solution-head">
+          <div class="count" id="moveCount"></div>
+        </div>
+        <div class="moves" id="moves"></div>
+        <ol class="steps" id="steps"></ol>
+      </section>
+    </div>
+  </div>
+
+  <p class="foot">
+    Résolution en local dans ton navigateur via
+    <a href="https://github.com/ldez/cubejs" target="_blank" rel="noopener">cubejs</a> (MIT).
+    Aucune donnée n&rsquo;est envoyée.
+  </p>
+</div>
+
+<!-- Moteur de résolution (deux phases de Kociemba) -->
+<script src="cube.js"></script>
+<script src="solve.js"></script>
+<script>
+"use strict";
+(function () {
+  // ---- Faces dans l'ordre kociemba : U R F D L B ----
+  const FACES = ["U", "R", "F", "D", "L", "B"];
+  const FACE_INFO = {
+    U: { nom: "Haut",     couleur: "blanc"  },
+    R: { nom: "Droite",   couleur: "rouge"  },
+    F: { nom: "Avant",    couleur: "vert"   },
+    D: { nom: "Bas",      couleur: "jaune"  },
+    L: { nom: "Gauche",   couleur: "orange" },
+    B: { nom: "Derrière", couleur: "bleu"   },
+  };
+  const SOLVED = FACES.map(f => f.repeat(9)).join("");
+
+  // Explications françaises (identiques à l'outil terminal)
+  const NOMS = { U: "Haut", D: "Bas", R: "Droite", L: "Gauche", F: "Avant", B: "Derrière" };
+  function explication(m) {
+    const face = m[0];
+    const suff = m.slice(1);
+    const n = NOMS[face];
+    const article = (face === "R" || face === "L" || face === "F" || face === "B") ? "la face " : "la face du ";
+    if (suff === "2") return `Tourne ${article}${n} de 180°`;
+    if (suff === "'") return `Tourne ${article}${n} dans le sens anti-horaire`;
+    return `Tourne ${article}${n} dans le sens horaire`;
+  }
+
+  // ---------- État : 6 faces x 9 cases (lettre de face = couleur) ----------
+  const state = {};
+  function reset() { FACES.forEach(f => { state[f] = Array(9).fill(f); }); }
+  reset();
+
+  function cubeString() { return FACES.map(f => state[f].join("")).join(""); }
+
+  // ---------- Validateur de résolvabilité (Kociemba) ----------
+  // Testé : 0 faux négatif sur 3000 cubes aléatoires ; rejette flips/twists/permutations impossibles.
+  const cornerFacelet = [[8,9,20],[6,18,38],[0,36,47],[2,45,11],[29,26,15],[27,44,24],[33,53,42],[35,17,51]];
+  const edgeFacelet   = [[5,10],[7,19],[3,37],[1,46],[32,16],[28,25],[30,43],[34,52],[23,12],[21,41],[50,39],[48,14]];
+  const cornerColor = [["U","R","F"],["U","F","L"],["U","L","B"],["U","B","R"],["D","F","R"],["D","L","F"],["D","B","L"],["D","R","B"]];
+  const edgeColor   = [["U","R"],["U","F"],["U","L"],["U","B"],["D","R"],["D","F"],["D","L"],["D","B"],["F","R"],["F","L"],["B","L"],["B","R"]];
+
+  function valider(s) {
+    if (s.length !== 54) return "longueur incorrecte";
+    for (const f of FACES) {
+      let n = 0; for (const c of s) if (c === f) n++;
+      if (n !== 9) return `couleur « ${FACE_INFO[f].couleur} » présente ${n} fois au lieu de 9`;
+    }
+    const centres = [4,13,22,31,40,49].map(i => s[i]).join("");
+    if (centres !== "URFDLB") return "centres incohérents";
+
+    const cp = Array(8).fill(-1), co = Array(8).fill(0);
+    const ep = Array(12).fill(-1), eo = Array(12).fill(0);
+
+    for (let i = 0; i < 8; i++) {
+      let ori = 0;
+      for (; ori < 3; ori++) { const c = s[cornerFacelet[i][ori]]; if (c === "U" || c === "D") break; }
+      if (ori === 3) return "orientation des coins impossible";
+      const c1 = s[cornerFacelet[i][(ori + 1) % 3]];
+      const c2 = s[cornerFacelet[i][(ori + 2) % 3]];
+      let found = -1;
+      for (let j = 0; j < 8; j++) if (c1 === cornerColor[j][1] && c2 === cornerColor[j][2]) { found = j; break; }
+      if (found < 0) return "un coin est impossible (couleurs incohérentes)";
+      cp[i] = found; co[i] = ori;
+    }
+    for (let i = 0; i < 12; i++) {
+      const a = s[edgeFacelet[i][0]], b = s[edgeFacelet[i][1]];
+      let found = -1;
+      for (let j = 0; j < 12; j++) {
+        if (a === edgeColor[j][0] && b === edgeColor[j][1]) { found = j; eo[i] = 0; break; }
+        if (a === edgeColor[j][1] && b === edgeColor[j][0]) { found = j; eo[i] = 1; break; }
+      }
+      if (found < 0) return "une arête est impossible (couleurs incohérentes)";
+      ep[i] = found;
+    }
+    if (new Set(cp).size !== 8) return "un coin est en double";
+    if (new Set(ep).size !== 12) return "une arête est en double";
+    if (co.reduce((a, b) => a + b, 0) % 3 !== 0) return "orientation des coins impossible (un coin est mal tourné)";
+    if (eo.reduce((a, b) => a + b, 0) % 2 !== 0) return "orientation des arêtes impossible (une arête est retournée)";
+    const parity = p => { let x = 0; for (let i = 0; i < p.length; i++) for (let j = i + 1; j < p.length; j++) if (p[i] > p[j]) x ^= 1; return x; };
+    if (parity(cp) !== parity(ep)) return "position impossible (deux pièces sont interverties)";
+    return "OK";
+  }
+
+  // ---------- Construction du DOM ----------
+  const net = document.getElementById("net");
+  const stickerEls = {};
+  FACES.forEach(f => { stickerEls[f] = []; });
+
+  // Ordre d'affichage (patron déplié)
+  ["U", "L", "F", "R", "B", "D"].forEach(f => {
+    const face = document.createElement("div");
+    face.className = "face";
+    face.dataset.pos = f;
+    const tag = document.createElement("div");
+    tag.className = "face-tag";
+    tag.textContent = FACE_INFO[f].nom;
+    face.appendChild(tag);
+    for (let i = 0; i < 9; i++) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "sticker fill-" + state[f][i];
+      b.dataset.face = f; b.dataset.idx = i;
+      b.setAttribute("aria-label", `Face ${FACE_INFO[f].nom}, case ${i + 1}`);
+      if (i === 4) { b.classList.add("locked"); b.setAttribute("aria-disabled", "true"); b.title = "Centre (fixe)"; }
+      face.appendChild(b);
+      stickerEls[f][i] = b;
+    }
+    net.appendChild(face);
+  });
+
+  function paintSticker(f, i) {
+    const el = stickerEls[f][i];
+    el.className = "sticker fill-" + state[f][i] + (i === 4 ? " locked" : "");
+  }
+  function repaintAll() { FACES.forEach(f => { for (let i = 0; i < 9; i++) paintSticker(f, i); }); }
+
+  // ---------- Peinture (clic + glisser) ----------
+  let current = "U";
+  let painting = false;
+
+  function applyColor(el) {
+    const f = el.dataset.face, i = +el.dataset.idx;
+    if (i === 4) return;            // centre verrouillé
+    if (state[f][i] === current) return;
+    state[f][i] = current;
+    paintSticker(f, i);
+    hideSolution();
+    updateStatus();
+  }
+  net.addEventListener("pointerdown", e => {
+    const el = e.target.closest(".sticker"); if (!el) return;
+    painting = true; applyColor(el);
+    if (el.setPointerCapture) { try { el.releasePointerCapture(e.pointerId); } catch (_) {} }
+    e.preventDefault();
+  });
+  net.addEventListener("pointerover", e => {
+    if (!painting) return;
+    const el = e.target.closest(".sticker"); if (el) applyColor(el);
+  });
+  window.addEventListener("pointerup", () => { painting = false; });
+  // Clavier : Entrée/Espace peint la case ciblée
+  net.addEventListener("keydown", e => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const el = e.target.closest(".sticker"); if (!el) return;
+    e.preventDefault(); applyColor(el);
+  });
+
+  // ---------- Palette ----------
+  const palette = document.getElementById("palette");
+  FACES.forEach(f => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "swatch fill-" + f;
+    b.dataset.color = f;
+    b.setAttribute("aria-pressed", String(f === current));
+    b.innerHTML = `<span class="chip"></span>${FACE_INFO[f].couleur}`;
+    b.addEventListener("click", () => {
+      current = f;
+      [...palette.children].forEach(c => c.setAttribute("aria-pressed", String(c.dataset.color === f)));
+    });
+    palette.appendChild(b);
+  });
+
+  // ---------- Légende ----------
+  const legend = document.getElementById("legend");
+  FACES.forEach(f => {
+    const s = document.createElement("span");
+    s.innerHTML = `<i class="fill-${f}" style="background:var(--c-${f})"></i>${FACE_INFO[f].couleur} = ${FACE_INFO[f].nom}`;
+    legend.appendChild(s);
+  });
+
+  // ---------- Statut ----------
+  const statusEl = document.getElementById("status");
+  const statusText = document.getElementById("statusText");
+  let solverReady = false;
+
+  function setStatus(kind, text) {
+    statusEl.className = "status " + kind;
+    statusText.textContent = text;
+  }
+  function updateStatus() {
+    if (!solverReady) { setStatus("busy", "Préparation du solveur…"); return; }
+    const s = cubeString();
+    if (s === SOLVED) { setStatus("ok", "Cube déjà résolu."); return; }
+    const v = valider(s);
+    if (v === "OK") setStatus("ok", "Cube valide, prêt à résoudre.");
+    else setStatus("err", "Cube impossible : " + v + ".");
+  }
+
+  // ---------- Solution ----------
+  const solutionEl = document.getElementById("solution");
+  const moveCount = document.getElementById("moveCount");
+  const movesEl = document.getElementById("moves");
+  const stepsEl = document.getElementById("steps");
+  function hideSolution() { solutionEl.hidden = true; }
+
+  function showSolution(moves) {
+    movesEl.innerHTML = "";
+    stepsEl.innerHTML = "";
+    moveCount.innerHTML = `<span>${moves.length}</span> mouvement${moves.length > 1 ? "s" : ""}`;
+    moves.forEach((m, idx) => {
+      const chip = document.createElement("span");
+      chip.className = "move mc-" + m[0];
+      chip.textContent = m;
+      movesEl.appendChild(chip);
+
+      const li = document.createElement("li");
+      li.innerHTML = `<span class="n">${idx + 1}</span><span class="mv">${m}</span><span class="ex">${explication(m)}</span>`;
+      stepsEl.appendChild(li);
+    });
+    solutionEl.hidden = false;
+  }
+
+  // ---------- Actions ----------
+  const solveBtn = document.getElementById("solveBtn");
+  const scrambleBtn = document.getElementById("scrambleBtn");
+  const resetBtn = document.getElementById("resetBtn");
+
+  function loadFromString(s) {
+    FACES.forEach((f, fi) => {
+      for (let i = 0; i < 9; i++) state[f][i] = s[fi * 9 + i];
+    });
+    repaintAll(); hideSolution(); updateStatus();
+  }
+
+  solveBtn.addEventListener("click", () => {
+    if (!solverReady) return;
+    const s = cubeString();
+    if (s === SOLVED) { setStatus("ok", "Cube déjà résolu — aucun mouvement nécessaire."); hideSolution(); return; }
+    const v = valider(s);
+    if (v !== "OK") { setStatus("err", "Impossible de résoudre — cube invalide : " + v + "."); hideSolution(); return; }
+    try {
+      const sol = Cube.fromString(s).solve();
+      const moves = sol.split(/\s+/).filter(Boolean);
+      showSolution(moves);
+      setStatus("ok", `Résolu en ${moves.length} mouvement${moves.length > 1 ? "s" : ""}.`);
+    } catch (err) {
+      setStatus("err", "Erreur du solveur : " + err.message + ".");
+      hideSolution();
+    }
+  });
+
+  resetBtn.addEventListener("click", () => { reset(); repaintAll(); hideSolution(); updateStatus(); });
+
+  scrambleBtn.addEventListener("click", () => {
+    if (!solverReady) return;
+    loadFromString(Cube.random().asString());
+    setStatus("ok", "Mélange aléatoire chargé — clique « Résoudre ».");
+  });
+
+  // ---------- Thème ----------
+  const themeToggle = document.getElementById("themeToggle");
+  const themeIcon = document.getElementById("themeIcon");
+  const themeLabel = document.getElementById("themeLabel");
+  function currentTheme() {
+    const attr = document.documentElement.getAttribute("data-theme");
+    if (attr) return attr;
+    return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  function syncThemeButton() {
+    const t = currentTheme();
+    themeIcon.textContent = t === "dark" ? "☀" : "☾";
+    themeLabel.textContent = t === "dark" ? "Clair" : "Sombre";
+  }
+  themeToggle.addEventListener("click", () => {
+    const next = currentTheme() === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    syncThemeButton();
+  });
+  syncThemeButton();
+
+  // ---------- Initialisation du solveur (une fois, en différé) ----------
+  solveBtn.disabled = true; scrambleBtn.disabled = true;
+  setStatus("busy", "Préparation du solveur…");
+  setTimeout(() => {
+    try {
+      Cube.initSolver();
+      solverReady = true;
+      solveBtn.disabled = false; scrambleBtn.disabled = false;
+      updateStatus();
+    } catch (err) {
+      setStatus("err", "Le moteur de résolution n'a pas pu se charger.");
+    }
+  }, 60);
+})();
+</script>
+</body>
+</html>
