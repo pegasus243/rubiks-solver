@@ -1,5 +1,7 @@
 # Solveur de Rubik's Cube 🧩
 
+**🔗 Démo en ligne : https://pegasus243.github.io/rubiks-solver/**
+
 Un solveur de Rubik's Cube en **deux versions** :
 
 - 🌐 **Version web** — une page interactive : on peint les 6 faces, on clique « Résoudre ».
